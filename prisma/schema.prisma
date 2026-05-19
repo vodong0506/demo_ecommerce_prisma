@@ -1,0 +1,259 @@
+// Mô hình thiết kế database ->  BRAC: Role-Based Access Control - Kiểm soát truy cập dựa trên vai trò
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator json {
+  provider = "prisma-json-types-generator"
+}
+
+generator zod {
+  provider           = "zod-prisma-types"
+  output             = "../src/generated/zod"
+  useTypesAssertions = true
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── ENUMS ─────────────────────────────────────────────────────
+
+enum UserStatus {
+  active
+  inactive
+}
+
+enum VendorStatus {
+  active
+  inactive
+}
+
+enum RoleType {
+  SUPER_ADMIN
+  SYSTEM
+  VENDOR
+}
+
+enum UserSystemRoleStatus {
+  active
+  inactive
+}
+
+enum UserVendorRoleStatus {
+  active
+  inactive
+}
+
+enum ProductStatus {
+  active
+  inactive
+  draft
+}
+
+// ── MODELS ────────────────────────────────────────────────────
+
+model User {
+  id          String     @id @default(uuid())
+  email       String     @unique
+  password    String
+  firstName   String?
+  lastName    String?
+  fullAddress String?
+  city        String?
+  province    String?
+  country     String?
+  phone       String?
+  status      UserStatus @default(active)
+  createdAt   DateTime   @default(now())
+  createdBy   String?
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  vendors         Vendor[]
+  userSystemRoles UserSystemRole[] // (user có role hệ thống)
+  userVendorRoles UserVendorRole[] // (user tham gia nhiều vendor với role khác nhau)
+}
+
+model Vendor {
+  id            String       @id @default(uuid())
+  userID        String
+  name          String
+  slug          String       @unique
+  description   String?
+  logoUrl       String?
+  taxCode       String?
+  totalProducts Int          @default(0)
+  totalOrders   Int          @default(0)
+  status        VendorStatus @default(active)
+  createdAt     DateTime     @default(now())
+  createdBy     String?
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+
+  user            User             @relation(fields: [userID], references: [id])
+  products        Product[]
+  userVendorRoles UserVendorRole[] // (danh sách thành viên trong vendor)
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   
+  description String?
+  roleType    RoleType @default(VENDOR)
+  createdAt   DateTime @default(now())
+  createdBy   String?
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  userSystemRoles UserSystemRole[]
+  userVendorRoles UserVendorRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([name])
+}
+
+model Permission {
+  id                 String    @id @default(uuid())
+  name               String
+  description        String?
+  // [route]_[action] (Ex: [/products]_[read], [/products]_[create])
+  key                String // (dùng để check permission trong code)
+  isSystemPermission Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  createdBy          String?
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  rolePermissions RolePermission[]
+
+  @@unique([name, key])
+}
+
+model RolePermission {
+  roleID       String
+  permissionID String
+  createdAt    DateTime @default(now())
+  createdBy    String?
+
+  role       Role       @relation(fields: [roleID], references: [id])
+  permission Permission @relation(fields: [permissionID], references: [id])
+
+  @@id([roleID, permissionID])
+}
+
+model UserSystemRole {
+  id        String               @id @default(uuid())
+  userID    String
+  roleID    String
+  status    UserSystemRoleStatus @default(active)
+  createdAt DateTime             @default(now())
+  createdBy String?
+
+  user User @relation(fields: [userID], references: [id])
+  role Role @relation(fields: [roleID], references: [id])
+
+  @@unique([userID, roleID]) // (1 user có thể có nhiều system role)
+}
+
+model UserVendorRole {
+  id        String               @id @default(uuid())
+  userID    String
+  vendorID  String
+  roleID    String
+  status    UserVendorRoleStatus @default(active)
+  createdAt DateTime             @default(now())
+  createdBy String?
+
+  user   User   @relation(fields: [userID], references: [id])
+  vendor Vendor @relation(fields: [vendorID], references: [id])
+  role   Role   @relation(fields: [roleID], references: [id])
+
+  @@unique([userID, vendorID]) // (1 user chỉ có 1 role trong 1 vendor)
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  parentID    String?
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+  createdBy   String?
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  parent            Category?         @relation("CategoryParent", fields: [parentID], references: [id])
+  children          Category[]        @relation("CategoryParent")
+  productCategories ProductCategory[]
+}
+
+model Product {
+  id            String        @id @default(uuid())
+  vendorID      String
+  name          String
+  slug          String
+  description   String?
+  sku           String?       @unique
+  price         Decimal
+  stockQuantity Int           @default(0)
+  status        ProductStatus @default(draft)
+  createdAt     DateTime      @default(now())
+  createdBy     String?
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  vendor            Vendor            @relation(fields: [vendorID], references: [id])
+  productCategories ProductCategory[]
+  productImages     ProductImage[]
+  productVariants   ProductVariant[]
+
+  @@unique([vendorID, slug])
+}
+
+model ProductVariant {
+  id            String    @id @default(uuid())
+  productID     String
+  name          String?
+  sku           String?   @unique
+  price         Decimal
+  stockQuantity Int       @default(0)
+  attributes    Json?
+  createdAt     DateTime  @default(now())
+  createdBy     String?
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  product       Product        @relation(fields: [productID], references: [id])
+  productImages ProductImage[]
+}
+
+model ProductCategory {
+  productID  String
+  categoryID String
+
+  product  Product  @relation(fields: [productID], references: [id])
+  category Category @relation(fields: [categoryID], references: [id])
+
+  @@id([productID, categoryID])
+}
+
+model ProductImage {
+  id               String    @id @default(uuid())
+  name             String
+  description      String?
+  productID        String? // (ảnh thuộc product gốc)
+  productVariantID String? // (ảnh thuộc variant)
+  imageUrl         String
+  sortOrder        Int       @default(0)
+  createdAt        DateTime  @default(now())
+  createdBy        String?
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  product        Product?        @relation(fields: [productID], references: [id])
+  productVariant ProductVariant? @relation(fields: [productVariantID], references: [id])
+}
