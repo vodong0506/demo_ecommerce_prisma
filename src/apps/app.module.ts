@@ -26,7 +26,7 @@ import { UserVendorRolesModule } from './user-vendor-roles/user-vendor-roles.mod
 import { VendorsModule } from './vendors/vendors.module';
 import { AuthGuard } from './auth/auth.guard';
 import { FileUtilModule } from 'src/common/utils/file-util/file-util.module';
-// import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { CacheUtilModule } from 'src/common/utils/cache-util/cache-util.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductCategoriesModule } from './product-categories/product-categories.module';
@@ -36,6 +36,8 @@ import { ProductsModule } from './products/products.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { UserSystemRolesModule } from './user-system-role/user-system-roles.module';
 import { EventsModule } from 'src/events/events.module';
+import { MailUtilModule } from 'src/common/utils/mail-util/mail-util.module';
+import { RateLimitModule } from 'src/common/security/rate-limit/rate-limit.module';
 
 @Module({
   imports: [
@@ -75,6 +77,8 @@ import { EventsModule } from 'src/events/events.module';
     ProductsModule,
     EventEmitterModule.forRoot(),
     EventsModule,
+    MailUtilModule,
+    RateLimitModule,
   ],
   controllers: [AppController],
   providers: [
@@ -104,10 +108,12 @@ import { EventsModule } from 'src/events/events.module';
       provide: APP_GUARD,
       useClass: AccessControlGuard,
     },
-    // {
-    //   provide: APP_GUARD,
-    //   useClass: ThrottlerGuard,
-    // },
+
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+
     {
       provide: APP_INTERCEPTOR,
       useClass: FormatResponseInterceptor,
