@@ -1,9 +1,9 @@
-import { Module } from '@nestjs/common';
-import { MailUtilService } from './mail-util.service';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
+import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MailEnvs, MailTemplate } from './mail-util.const';
+import { MailConfig, MailEnvs } from './mail-util.const';
+import { MailUtilService } from './mail-util.service';
 
 @Module({
   imports: [
@@ -23,10 +23,10 @@ import { MailEnvs, MailTemplate } from './mail-util.const';
           },
         },
         defaults: {
-          from: `"${MailTemplate.MAIL_NAME_DEFAULT}" <${MailTemplate.MAIL_DEFAULT}>`,
+          from: `"${MailConfig.MAIL_NAME_DEFAULT}" <${MailConfig.MAIL_DEFAULT}>`,
         },
         template: {
-          dir: __dirname + MailTemplate.TEMPLATES_PATH,
+          dir: __dirname + MailConfig.TEMPLATES_PATH,
           adapter: new PugAdapter(),
           options: {
             strict: true,

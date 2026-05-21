@@ -53,6 +53,34 @@ enum ProductStatus {
   draft
 }
 
+enum OrderStatus {
+  pending
+  confirmed
+  processing
+  shipped
+  delivered
+  cancelled
+  refunded
+}
+
+enum AddressType {
+  billing
+  shipping
+}
+
+enum PromotionStatus {
+  active
+  inactive
+  expired
+}
+
+enum PromotionType {
+  percentage
+  fixed_amount
+  free_shipping
+  buy_x_get_y
+}
+
 // ── MODELS ────────────────────────────────────────────────────
 
 model User {
@@ -75,6 +103,8 @@ model User {
   vendors         Vendor[]
   userSystemRoles UserSystemRole[] // (user có role hệ thống)
   userVendorRoles UserVendorRole[] // (user tham gia nhiều vendor với role khác nhau)
+  orders          Order[]
+  cart            Cart?
 }
 
 model Vendor {
@@ -229,6 +259,8 @@ model ProductVariant {
 
   product       Product        @relation(fields: [productID], references: [id])
   productImages ProductImage[]
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
 }
 
 model ProductCategory {
@@ -257,3 +289,151 @@ model ProductImage {
   product        Product?        @relation(fields: [productID], references: [id])
   productVariant ProductVariant? @relation(fields: [productVariantID], references: [id])
 }
+
+model Order {
+  id             String      @id @default(uuid())
+  orderNumber    String      @unique
+  userID         String
+  status         OrderStatus @default(pending)
+  subtotal       Decimal
+  taxAmount      Decimal     @default(0)
+  shippingAmount Decimal     @default(0)
+  discountAmount Decimal     @default(0)
+  totalAmount    Decimal
+  currency       String      @default("VND")
+  notes          String?
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime    @default(now())
+  createdBy      String?
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  user            User             @relation(fields: [userID], references: [id])
+  orderItems      OrderItem[]
+  orderAddresses  OrderAddress[]
+  orderPromotions OrderPromotion[]
+  // payments        Payment[]
+}
+
+model OrderItem {
+  id                     String  @id @default(uuid())
+  orderID                String
+  productVariantID       String
+  quantity               Int
+  unitPrice              Decimal
+  totalPrice             Decimal
+  productVariantSnapshot Json?
+
+  productVariant ProductVariant @relation(fields: [productVariantID], references: [id])
+  order          Order          @relation(fields: [orderID], references: [id])
+}
+
+model OrderAddress {
+  id          String      @id @default(uuid())
+  orderID     String
+  type        AddressType
+  firstName   String
+  lastName    String?
+  company     String?
+  fullAddress String
+  city        String?
+  province    String?
+  country     String?
+  phone       String
+
+  order Order @relation(fields: [orderID], references: [id])
+}
+
+model Promotion {
+  id          String          @id @default(uuid())
+  code        String          @unique
+  name        String
+  description String?
+  type        PromotionType
+  value       Decimal
+  usageLimit  Int?
+  startDate   DateTime        @default(now())
+  endDate     DateTime?
+  status      PromotionStatus @default(inactive)
+  createdAt   DateTime        @default(now())
+  createdBy   String?
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+  
+  orderPromotions OrderPromotion[]
+}
+
+model OrderPromotion {
+  id             String  @id @default(uuid())
+  orderID        String
+  promotionID    String
+  discountAmount Decimal @default(0)
+
+  order     Order     @relation(fields: [orderID], references: [id])
+  promotion Promotion @relation(fields: [promotionID], references: [id])
+
+  @@unique([orderID, promotionID])
+}
+
+model Cart {
+  id        String   @id @default(uuid())
+  userID    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userID], references: [id])
+  cartItems CartItem[]
+}
+
+model CartItem {
+  id               String   @id @default(uuid())
+  cartID           String
+  productVariantID String
+  quantity         Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cart           Cart           @relation(fields: [cartID], references: [id], onDelete: Cascade)
+  productVariant ProductVariant @relation(fields: [productVariantID], references: [id])
+
+  @@unique([cartID, productVariantID])
+}
+
+// model Notification {
+//   id      String  @id @default(uuid())
+//   userID  String
+//   title   String
+//   message String
+//   isRead  Boolean @default(false)
+
+//   User User? @relation(fields: [userID], references: [id])
+// }
+
+// enum PaymentStatus {
+//   pending
+//   completed
+//   failed
+//   refunded
+// }
+
+// enum PaymentType {
+//   creditCard
+//   bankTransfer
+//   eWallet
+// }
+
+// model Payment {
+//   id            String        @id @default(uuid())
+//   orderID       String
+//   type          PaymentType
+//   status        PaymentStatus
+//   amount        Decimal
+//   transactionID String?
+//   createdAt     DateTime      @default(now())
+//   createdBy     String?
+//   updatedAt     DateTime      @updatedAt
+//   deletedAt     DateTime?
+
+//   order Order @relation(fields: [orderID], references: [id])
+// }

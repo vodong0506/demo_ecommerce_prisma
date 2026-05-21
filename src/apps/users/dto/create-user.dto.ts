@@ -24,6 +24,8 @@ export class CreateUserDto implements Prisma.UserCreateInput {
   userVendorRoles?:
     | Prisma.UserVendorRoleCreateNestedManyWithoutUserInput
     | undefined;
+  // orders?: Prisma.OrderCreateNestedManyWithoutUserInput | undefined;
+  // cart?: Prisma.CartCreateNestedOneWithoutUserInput | undefined;
 }
 
 export class ImportUsersDto extends ImportExcel {}
