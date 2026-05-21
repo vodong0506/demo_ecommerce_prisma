@@ -7,6 +7,7 @@ export enum JWTEnvs {
 export enum JWTToken {
   ACCESS_TOKEN_EXPIRE_IN = '6h',
   REFRESH_TOKEN_EXPIRE_IN = '1d',
+  RESET_TOKEN_EXPIRE_IN = '15m',
 }
 
 // (chuẩn hóa key trong response, giúp frontend/backend thống nhất cách đọc dữ liệu.)

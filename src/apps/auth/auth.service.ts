@@ -4,15 +4,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService, TokenExpiredError } from '@nestjs/jwt';
+import { UserInfo } from 'src/common/decorators/user.decorator';
 import { PrismaService } from 'src/common/prisma/prisma.service';
-import { SignInDto, SignUpDto } from './dto/sign.dto';
-import { UsersService } from '../users/users.service';
-import { StringUtilService } from 'src/common/utils/string-util/string-util.service';
-import { JWTToken, TokenKeys } from './consts/jwt.const';
-import { MailUtilService } from 'src/common/utils/mail-util/mail-util.service';
-import { ForgotPasswordDto, ResetPasswordDto } from './dto/password.dto';
 import { MailTemplate } from 'src/common/utils/mail-util/mail-util.const';
-import { join } from 'path';
+import { MailUtilService } from 'src/common/utils/mail-util/mail-util.service';
+import { StringUtilService } from 'src/common/utils/string-util/string-util.service';
+import { UsersService } from '../users/users.service';
+import { JWTToken, TokenKeys } from './consts/jwt.const';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password.dto';
+import { SignInDto, SignUpDto } from './dto/sign.dto';
 
 @Injectable()
 export class AuthService {
@@ -85,6 +85,12 @@ export class AuthService {
     return await this.createToken({ userID, userEmail });
   }
 
+  async refreshToken(refreshToken: string) {
+    const decoded = await this.verifyToken(refreshToken);
+    const { iat: _iat, exp: _exp, ...user } = decoded;
+    return this.createToken(user as UserInfo);
+  }
+
   sendSMS() {
     return {};
   }
@@ -97,27 +103,26 @@ export class AuthService {
       },
     });
     if (!user) throw new UnauthorizedException('Not found user');
-    const userEmail = user.email;
-    // (gửi mail reset password)
-    if (userEmail) {
+    const resetToken = await this.jwtService.signAsync(
+      {
+        userId: user.id,
+      },
+      {
+        expiresIn: JWTToken.RESET_TOKEN_EXPIRE_IN,
+      },
+    );
+    console.log(resetToken);
+    const resetLink = `${redirectTo}?token=${resetToken}`;
+    if (user.email) {
       await this.mailUtilService.sendMail({
-        to: userEmail,
+        to: user.email,
         subject: 'Reset password',
         template: MailTemplate.RESET_PASSWORD,
         context: {
-          redirectTo,
+          redirectTo: resetLink,
+          username: user.firstName,
           sentAt: new Date().toLocaleString(),
         },
-        attachments: [
-          {
-            filename: 'logo.png',
-            path: join(
-              process.cwd(),
-              'src/common/utils/mail-util/templates/assets/logo.png',
-            ),
-            cid: 'vtdhub-logo',
-          },
-        ],
       });
     } else {
       this.sendSMS();
@@ -125,14 +130,16 @@ export class AuthService {
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto) {
-    const { userID, password, user } = resetPasswordDto;
-    const dataUpdate = {
-      password: await this.stringUtilService.hash(password),
-      user,
-    };
+    const { token, password } = resetPasswordDto;
+    const decoded = await this.verifyToken(token);
+    if (!decoded) throw new UnauthorizedException('Invalid token');
+    const userId = decoded.userId;
+    const hashedPassword = await this.stringUtilService.hash(password);
     return await this.userService.extended.update({
-      data: dataUpdate,
-      where: { id: userID },
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+      },
     });
   }
 }
