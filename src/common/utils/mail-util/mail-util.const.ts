@@ -1,5 +1,6 @@
 export enum MailTemplate {
   RESET_PASSWORD = 'reset-password',
+  WELCOME = 'welcome',
   TEMPLATES_PATH = '/templates/mails',
   MAIL_DEFAULT = '<vodong0506@gmail.com>',
   MAIL_NAME_DEFAULT = 'support.VTDhub',

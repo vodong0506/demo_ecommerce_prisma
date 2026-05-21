@@ -61,9 +61,20 @@ export class AuthService {
       password: passwordHashed,
       ...otherInfo,
     });
+    // (gửi mail sau khi tạo user)
+    await this.mailUtilService.sendMail({
+      to: email,
+      subject: 'Welcome to VTDhub',
+      template: MailTemplate.WELCOME,
+      context: {
+        username: userCreated.firstName,
+        email: userCreated.email,
+        createdAt: new Date().toLocaleString(),
+        loginUrl: 'http://localhost:8888/api/auth/sign-in',
+      },
+    });
     // (Ẩn mật khẩu khi trả về)
-    const { password: passwordCreated, ...userResponse } = userCreated;
-    console.log(passwordCreated);
+    const { password: _password, ...userResponse } = userCreated;
     return userResponse;
   }
 
