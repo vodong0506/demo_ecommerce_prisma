@@ -1,14 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ExportUserVendorRolesDto } from './dto/get-user-vendor-role.dto';
-import { ImportUserVendorRolesDto } from './dto/create-user-vendor-role.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { UserVendorRole } from './entities/user-vendor-role.entity';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
+import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { VendorsService } from '../vendors/vendors.service';
+import { ImportUserVendorRolesDto } from './dto/create-user-vendor-role.dto';
+import { ExportUserVendorRolesDto } from './dto/get-user-vendor-role.dto';
+import { UserVendorRole } from './entities/user-vendor-role.entity';
 
 @Injectable()
 export class UserVendorRolesService extends PrismaBaseService<'userVendorRole'> {
@@ -83,62 +83,52 @@ export class UserVendorRolesService extends PrismaBaseService<'userVendorRole'> 
   // (Import dữ liệu từ file Excel vào database)
   async importUserVendorRoles({ file, user }: ImportUserVendorRolesDto) {
     const userVendorRoleSheetName =
-      this.excelSheets[this.userVendorRoleEntityName]; // (Lấy tên sheet)
-    const dataCreated = await this.excelUtilService.read(file); // (Đọc file)
+      this.excelSheets[this.userVendorRoleEntityName];
+
+    const dataCreated = await this.excelUtilService.read(file);
     const dataImport = dataCreated[userVendorRoleSheetName];
 
-    const usersData = new Map<string, string>(); // email -> id
-    const allUsers = await this.usersService.client.findMany({
-      select: { id: true, email: true },
-    });
-    for (const user of allUsers) {
-      usersData.set(user.email, user.id);
-    }
+    const [allUsers, allVendors, allRoles] = await Promise.all([
+      this.usersService.client.findMany({ select: { id: true, email: true } }),
+      this.vendorsService.client.findMany({ select: { id: true, name: true } }),
+      this.rolesService.client.findMany({ select: { id: true, name: true } }),
+    ]);
 
-    const vendorsData = new Map<string, string>(); // name -> id
-    const allVendors = await this.vendorsService.client.findMany({
-      select: { id: true, name: true },
-    });
-    for (const vendor of allVendors) {
-      vendorsData.set(vendor.name, vendor.id);
-    }
+    const userMap = new Map(allUsers.map((u) => [u.email, u.id])); // email   → userID
+    const vendorMap = new Map(allVendors.map((v) => [v.name, v.id])); // name    → vendorID
+    const roleMap = new Map(allRoles.map((r) => [r.name, r.id])); // roleName → roleID
 
-    const rolesData = new Map<string, string>(); // "roleName" -> id
-    const allRoles = await this.rolesService.client.findMany({
-      select: { id: true, name: true },
-    });
-    for (const role of allRoles) {
-      rolesData.set(role.name, role.id);
-    }
-    // (Duyệt từng dòng Excel)
     const idsMapping = dataImport.map((item) => {
       const { userEmail, vendorName, roleName } = item ?? {};
 
-      const userID = usersData.get(userEmail);
+      const userID = userMap.get(userEmail);
       if (!userID) {
-        throw new BadRequestException(
-          `User not found with email: "${userEmail}"`,
-        );
+        throw new BadRequestException(`User không tồn tại: "${userEmail}"`);
       }
-      const vendorID = vendorsData.get(vendorName);
+
+      const vendorID = vendorMap.get(vendorName);
       if (!vendorID) {
-        throw new BadRequestException(`Vendor not found: "${vendorName}"`);
+        throw new BadRequestException(`Vendor không tồn tại: "${vendorName}"`);
       }
-      const roleKey = `${vendorID}__${roleName}`; // (Tạo roleKey)
-      const roleID = rolesData.get(roleKey);
+
+      const roleID = roleMap.get(roleName);
       if (!roleID) {
-        throw new BadRequestException(
-          `Role "${roleName}" not found in vendor "${vendorName}" (key: ${roleKey})`,
-        );
+        throw new BadRequestException(`Role không tồn tại: "${roleName}"`);
       }
+
       return { userID, vendorID, roleID };
     });
 
-    await this.extended.deleteMany({ where: { OR: idsMapping } }); // (XÓA những record trùng với dữ liệu sắp import)
-    const data = await this.extended.createMany({
-      data: idsMapping.map((item) => ({ ...item, user })),
+    return this.prismaService.$transaction(async (tx) => {
+      await tx.userVendorRole.deleteMany({ where: { OR: idsMapping } });
+
+      return tx.userVendorRole.createMany({
+        data: idsMapping.map((item) => ({
+          ...item,
+          createdBy: user.userID,
+        })),
+      });
     });
-    return data;
   }
 
   // (Lấy danh sách mapping từ database)

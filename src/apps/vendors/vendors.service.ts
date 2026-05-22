@@ -1,22 +1,22 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { CreateVendorDto, ImportVendorsDto } from './dto/create-vendor.dto';
-import { UpdateVendorDto } from './dto/update-vendor.dto';
-import {
-  ExportVendorsDto,
-  GetVendorsPaginationDto,
-} from './dto/get-vendor.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { Vendor } from './entities/vendor.entity';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   GetOptionsParams,
   Options,
 } from '../../common/query/options.interface';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
+import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
 import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
 import { UsersService } from '../users/users.service';
+import { CreateVendorDto, ImportVendorsDto } from './dto/create-vendor.dto';
+import {
+  ExportVendorsDto,
+  GetVendorsPaginationDto,
+} from './dto/get-vendor.dto';
+import { UpdateVendorDto } from './dto/update-vendor.dto';
+import { Vendor } from './entities/vendor.entity';
 
 @Injectable()
 export class VendorsService
@@ -102,32 +102,19 @@ export class VendorsService
   }
 
   async exportVendors({ ids }: ExportVendorsDto) {
-    const [vendors, allUsers] = await Promise.all([
-      this.extended.export({
-        where: { id: { in: ids } },
-      }),
-      this.userService.client.findMany({
-        select: { id: true, email: true },
-      }),
-    ]);
-    const idToEmail = new Map<string, string>(
-      allUsers.map((user) => [user.id, user.email]),
-    );
-    const mappedVendors = vendors.map((vendor) => {
-      const mapped: Record<string, unknown> = {};
-
-      for (const [key, value] of Object.entries(vendor)) {
-        if (key === 'userID') {
-          mapped['userEmail'] = value
-            ? (idToEmail.get(value as string) ?? null)
-            : null;
-        } else {
-          mapped[key] = value;
-        }
-      }
-      return mapped;
+    const vendors = await this.extended.export({
+      where: { id: { in: ids } },
+      include: {
+        user: { select: { email: true } },
+      },
     });
-    const data = this.excelUtilService.generateExcel({
+    const mappedVendors = vendors.map(
+      ({ user, userID: _userID, ...vendor }) => ({
+        ...vendor,
+        userEmail: user?.email ?? null, // (thay userID bằng userEmail)
+      }),
+    );
+    return this.excelUtilService.generateExcel({
       worksheets: [
         {
           sheetName: this.excelSheets[this.vendorEntityName],
@@ -135,7 +122,6 @@ export class VendorsService
         },
       ],
     });
-    return data;
   }
 
   // (import danh sách vendor từ file Excel vào database)
