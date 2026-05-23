@@ -111,7 +111,7 @@ export class VendorsService
     const mappedVendors = vendors.map(
       ({ user, userID: _userID, ...vendor }) => ({
         ...vendor,
-        userEmail: user?.email ?? null, // (thay userID bằng userEmail)
+        userEmail: user?.email ?? null,
       }),
     );
     return this.excelUtilService.generateExcel({

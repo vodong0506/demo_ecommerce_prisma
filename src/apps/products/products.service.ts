@@ -1,22 +1,27 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { CreateProductDto, ImportProductsDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
 import {
-  ExportProductsDto,
-  GetProductsPaginationDto,
-} from './dto/get-product.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { Product } from './entities/product.entity';
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   GetOptionsParams,
   Options,
 } from '../../common/query/options.interface';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
+import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
 import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
+import { Vendor } from '../vendors/entities/vendor.entity';
 import { VendorsService } from '../vendors/vendors.service';
+import { CreateProductDto, ImportProductsDto } from './dto/create-product.dto';
+import {
+  ExportProductsDto,
+  GetProductsPaginationDto,
+} from './dto/get-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+import { Product } from './entities/product.entity';
 
 @Injectable()
 export class ProductsService
@@ -45,29 +50,45 @@ export class ProductsService
     return super.extended;
   }
 
-  async getProduct(where: Prisma.ProductWhereUniqueInput) {
-    const data = await this.extended.findUnique({
-      where,
+  // (Admin gọi /products/:id → vendorID = undefined → lấy bất kỳ product nào)
+  // (Vendor gọi /vendors/:vendorId/products/:id → vendorID = "abc" → chỉ lấy product thuộc vendor đó)
+  async getProduct(
+    where: Prisma.ProductWhereUniqueInput & { vendorID?: Vendor['id'] },
+  ) {
+    const { vendorID, ...uniqueWhere } = where;
+    const data = await this.extended.findFirst({
+      where: {
+        ...uniqueWhere,
+        ...(vendorID && { vendorID }),
+      },
     });
     return data;
   }
 
-  async getProducts({ page, itemPerPage }: GetProductsPaginationDto) {
-    const totalItems = await this.extended.count();
+  // (Admin → vendorID = undefined → lấy tất cả products)
+  //( Vendor → vendorID = "abc" → chỉ lấy products của vendor đó)
+  async getProducts({
+    page,
+    itemPerPage,
+    vendorID,
+  }: GetProductsPaginationDto & { vendorID?: Vendor['id'] }) {
+    const where = { ...(vendorID && { vendorID }) };
+
+    const totalItems = await this.extended.count({ where });
     const paging = this.paginationUtilService.paging({
       page,
       itemPerPage,
       totalItems,
     });
     const list = await this.extended.findMany({
+      where,
       skip: paging.skip,
       take: itemPerPage,
     });
-
-    const data = paging.format(list);
-    return data;
+    return paging.format(list);
   }
 
+  // (Chỉ dùng bởi VendorProductsController)
   async createProduct(createProductDto: CreateProductDto) {
     const data = await this.extended.create({
       data: createProductDto,
@@ -75,14 +96,23 @@ export class ProductsService
     return data;
   }
 
+  // (Admin → vendorID = undefined → update thẳng)
+  // (Vendor → vendorID = "abc" → verify product thuộc vendor trước rồi mới update)
   async updateProduct(params: {
-    where: Prisma.ProductWhereUniqueInput;
+    where: Prisma.ProductWhereUniqueInput & { vendorID?: Vendor['id'] };
     data: UpdateProductDto;
   }) {
     const { where, data: dataUpdate } = params;
+    const { vendorID, ...uniqueWhere } = where;
+    if (vendorID) {
+      const product = await this.extended.findFirst({
+        where: { id: uniqueWhere.id, vendorID },
+      });
+      if (!product) throw new NotFoundException('Product not found');
+    }
     const data = await this.extended.update({
       data: dataUpdate,
-      where,
+      where: uniqueWhere,
     });
     return data;
   }
@@ -100,10 +130,18 @@ export class ProductsService
     return data;
   }
 
-  async exportProducts({ ids }: ExportProductsDto) {
+  // (Admin gọi /products/export → vendorID = undefined → export tất cả)
+  // (Vendor gọi /vendors/:vendorId/products/export → vendorID = "abc" → chỉ export của vendor đó)
+  async exportProducts({
+    ids,
+    vendorID,
+  }: ExportProductsDto & { vendorID?: Vendor['id'] }) {
     const [products, allVendors] = await Promise.all([
       this.extended.export({
-        where: { id: { in: ids } },
+        where: {
+          ...(ids && { id: { in: ids } }),
+          ...(vendorID && { vendorID }), // ← filter theo vendor
+        },
       }),
       this.vendorService.client.findMany({
         select: { id: true, name: true },
@@ -125,7 +163,7 @@ export class ProductsService
       }
       return mapped;
     });
-    const data = this.excelUtilService.generateExcel({
+    return this.excelUtilService.generateExcel({
       worksheets: [
         {
           sheetName: this.excelSheets[this.productEntityName],
@@ -133,20 +171,34 @@ export class ProductsService
         },
       ],
     });
-    return data;
   }
 
-  async importProducts({ file, user }: ImportProductsDto) {
+  // (Admin phải có cột vendorName)
+  // (Vendor không cần cột VendorName gán thẳng vendorID từ URL)
+  async importProducts({
+    file,
+    user,
+    vendorID,
+  }: ImportProductsDto & { vendorID?: Vendor['id'] }) {
     const productSheetName = this.excelSheets[this.productEntityName];
     const dataCreated = await this.excelUtilService.read(file);
     const rows = dataCreated[productSheetName];
+    if (vendorID) {
+      return this.extended.createMany({
+        data: rows.map(({ vendorName: _vendorName, ...rest }) => ({
+          ...rest,
+          vendorID,
+          user,
+        })),
+      });
+    }
     const vendorNames = [...new Set(rows.map((r) => r.vendorName))] as string[];
     const vendors = await this.vendorService.client.findMany({
       where: { name: { in: vendorNames } },
       select: { id: true, name: true },
     });
     const vendorMap = new Map(vendors.map((v) => [v.name, v.id]));
-    const data = await this.extended.createMany({
+    return this.extended.createMany({
       data: rows.map(({ vendorName, ...rest }) => {
         const vendorID = vendorMap.get(vendorName);
         if (!vendorID)
@@ -156,11 +208,20 @@ export class ProductsService
         return { ...rest, vendorID, user };
       }),
     });
-    return data;
   }
 
-  async deleteProduct(where: Prisma.ProductWhereUniqueInput) {
-    const data = await this.extended.softDelete(where);
-    return data;
+  // (Admin → vendorID = undefined → xóa thẳng)
+  // (Vendor → vendorID = "abc" → verify product thuộc vendor trước rồi mới xóa)
+  async deleteProduct(
+    where: Prisma.ProductWhereUniqueInput & { vendorID?: Vendor['id'] },
+  ) {
+    const { vendorID, ...uniqueWhere } = where;
+    if (vendorID) {
+      const product = await this.extended.findFirst({
+        where: { id: uniqueWhere.id, vendorID },
+      });
+      if (!product) throw new NotFoundException('Product not found');
+    }
+    return this.extended.softDelete(uniqueWhere);
   }
 }

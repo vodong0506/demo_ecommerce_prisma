@@ -1,13 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { Prisma, RoleType } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
+import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
-import { UserSystemRole } from './entities/user-system-role.entity';
-import { ExportUserSystemRolesDto } from './dto/get-user-system-role.dto';
 import { ImportUserSystemRolesDto } from './dto/create-user-system-role.dto';
+import { ExportUserSystemRolesDto } from './dto/get-user-system-role.dto';
+import { UserSystemRole } from './entities/user-system-role.entity';
 
 @Injectable()
 export class UserSystemRolesService extends PrismaBaseService<'userSystemRole'> {
@@ -152,19 +152,25 @@ export class UserSystemRolesService extends PrismaBaseService<'userSystemRole'> 
       },
     });
 
-    const roleMap = new Map<string, { role: any; members: any[] }>();
+    const userMap = new Map<
+      string,
+      {
+        user: any;
+        roles: any[];
+      }
+    >();
 
     for (const { user, role } of data) {
-      if (!roleMap.has(role.id)) {
-        roleMap.set(role.id, {
-          role,
-          members: [],
+      if (!userMap.has(user.id)) {
+        userMap.set(user.id, {
+          user,
+          roles: [],
         });
       }
 
-      roleMap.get(role.id)!.members.push(user);
+      userMap.get(user.id)!.roles.push(role);
     }
 
-    return Array.from(roleMap.values());
+    return Array.from(userMap.values());
   }
 }

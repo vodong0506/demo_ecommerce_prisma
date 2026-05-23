@@ -6,13 +6,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
-import { Actions } from './access-control.const';
+import { User } from '@prisma/client';
 import { Request } from 'express';
-import { EnvVars } from '../../envs/validate.env';
 import { IS_SKIP_AUTH } from 'src/apps/auth/auth.decorator';
 import { UsersService } from 'src/apps/users/users.service';
-import { User } from '@prisma/client';
+import { Vendor } from 'src/apps/vendors/entities/vendor.entity';
+import { EnvVars } from '../../envs/validate.env';
 import { RequestMethod } from '../../utils/api-util/api-util.const';
+import { Actions } from './access-control.const';
 
 @Injectable()
 // (phân quyền (authorization) - kiểm tra quyền của user)
@@ -27,20 +28,29 @@ export class AccessControlGuard implements CanActivate {
   getCurrentRoute(req: Request) {
     const { path, params } = req;
     let basePath = path;
-    for (const [key, value] of Object.entries(params)) {
-      basePath = basePath.replace(value as string, `:${key}`); // (/api/users/3 → /api/users/:id)
+    const sortedParams = Object.entries(params).sort(
+      ([, valueA], [, valueB]) =>
+        (valueB as string).length - (valueA as string).length,
+    );
+    for (const [key, value] of sortedParams) {
+      basePath = basePath.replaceAll(value as string, `:${key}`);
     }
-    return basePath.replace(this.configService.get(EnvVars.APP_PREFIX)!, ''); // (bỏ prefix /api -> /users/:id)
+    return basePath.replace(this.configService.get(EnvVars.APP_PREFIX)!, '');
   }
 
   // (Kiểm tra user có quyền không)
-  private async canAccessResources(userID: User['id'], permissionKey: string) {
+  private async canAccessResources(
+    userID: User['id'],
+    permissionKey: string,
+    vendorID?: Vendor['id'],
+  ) {
     const isSupperAdmin = await this.usersService.isSuperAdmin(userID);
     if (isSupperAdmin) return true;
 
     const canAccess = await this.usersService.isExistPermissionKey({
       userID,
       permissionKey,
+      vendorID,
     });
     return canAccess;
   }
@@ -79,9 +89,13 @@ export class AccessControlGuard implements CanActivate {
     // (check quyền)
     const route = this.getCurrentRoute(req);
     const action = this.getAction(req.method as unknown as RequestMethod);
+    const vendor = Array.isArray(req.params['vendorId'])
+      ? req.params['vendorId'][0]
+      : req.params['vendorId'];
     const canAccess = await this.canAccessResources(
       user!.userID as string,
       `[${route}]_[${action}]`, // (Tạo permissionKey vd: [/users/:id]_[READ])
+      vendor,
     );
     return canAccess;
   }

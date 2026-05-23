@@ -1,7 +1,8 @@
-import { Prisma } from '@prisma/client';
-import { User } from '../entities/user.entity';
 import { IntersectionType, PartialType } from '@nestjs/mapped-types';
+import { Prisma } from '@prisma/client';
+import { Vendor } from 'src/apps/vendors/entities/vendor.entity';
 import { Pagination } from 'src/common/utils/pagination-util/pagination-util.interface';
+import { User } from '../entities/user.entity';
 
 // (Dùng để xuất dữ liệu user theo danh sách ID.)
 class ExportUsersDto {
@@ -12,6 +13,7 @@ class ExportUsersDto {
 class IsExistPermissionKeyDto {
   userID?: User['id'];
   permissionKey?: string;
+  vendorID?: Vendor['id'];
 }
 
 class GetUsersPaginationDto extends IntersectionType(
@@ -19,4 +21,4 @@ class GetUsersPaginationDto extends IntersectionType(
   PartialType(User), // (filter)
 ) {}
 
-export { ExportUsersDto, IsExistPermissionKeyDto, GetUsersPaginationDto };
+export { ExportUsersDto, GetUsersPaginationDto, IsExistPermissionKeyDto };

@@ -1,26 +1,31 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
 import {
-  CreateProductVariantDto,
-  ImportProductVariantsDto,
-} from './dto/create-product-variant.dto';
-import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
-import {
-  ExportProductVariantsDto,
-  GetProductVariantsPaginationDto,
-} from './dto/get-product-variant.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { ProductVariant } from './entities/product-variant.entity';
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { parseAttributes } from 'src/common/utils/data-format/data-fomat.util';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   GetOptionsParams,
   Options,
 } from '../../common/query/options.interface';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
+import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
 import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
 import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
+import { Product } from '../products/entities/product.entity';
 import { ProductsService } from '../products/products.service';
-import { parseAttributes } from 'src/common/utils/data-format/data-fomat.util';
+import {
+  CreateProductVariantDto,
+  ImportProductVariantsDto,
+} from './dto/create-product-variant.dto';
+import {
+  ExportProductVariantsDto,
+  GetProductVariantsPaginationDto,
+} from './dto/get-product-variant.dto';
+import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
+import { ProductVariant } from './entities/product-variant.entity';
 
 @Injectable()
 export class ProductVariantsService
@@ -49,30 +54,35 @@ export class ProductVariantsService
     return super.extended;
   }
 
-  async getProductVariant(where: Prisma.ProductVariantWhereUniqueInput) {
-    const data = await this.extended.findUnique({
-      where,
+  async getProductVariant(
+    where: Prisma.ProductVariantWhereUniqueInput & {
+      productID?: Product['id'];
+    },
+  ) {
+    const { productID, ...uniqueWhere } = where;
+    return this.extended.findFirst({
+      where: { ...uniqueWhere, ...(productID && { productID }) },
     });
-    return data;
   }
 
   async getProductVariants({
     page,
     itemPerPage,
-  }: GetProductVariantsPaginationDto) {
-    const totalItems = await this.extended.count();
+    productID,
+  }: GetProductVariantsPaginationDto & { productID?: Product['id'] }) {
+    const where = { ...(productID && { productID }) };
+    const totalItems = await this.extended.count({ where });
     const paging = this.paginationUtilService.paging({
       page,
       itemPerPage,
       totalItems,
     });
     const list = await this.extended.findMany({
+      where,
       skip: paging.skip,
       take: itemPerPage,
     });
-
-    const data = paging.format(list);
-    return data;
+    return paging.format(list);
   }
 
   async createProductVariant(createProductVariantDto: CreateProductVariantDto) {
@@ -83,15 +93,20 @@ export class ProductVariantsService
   }
 
   async updateProductVariant(params: {
-    where: Prisma.ProductVariantWhereUniqueInput;
+    where: Prisma.ProductVariantWhereUniqueInput & {
+      productID?: Product['id'];
+    };
     data: UpdateProductVariantDto;
   }) {
     const { where, data: dataUpdate } = params;
-    const data = await this.extended.update({
-      data: dataUpdate,
-      where,
-    });
-    return data;
+    const { productID, ...uniqueWhere } = where;
+    if (productID) {
+      const variant = await this.extended.findFirst({
+        where: { id: uniqueWhere.id, productID },
+      });
+      if (!variant) throw new NotFoundException('ProductVariant not found');
+    }
+    return this.extended.update({ data: dataUpdate, where: uniqueWhere });
   }
 
   async getOptions(
@@ -109,15 +124,22 @@ export class ProductVariantsService
     return data;
   }
 
-  async exportProductVariants({ ids }: ExportProductVariantsDto) {
+  async exportProductVariants({
+    ids,
+    productID,
+  }: ExportProductVariantsDto & { productID?: Product['id'] }) {
     const [productVariants, allProducts] = await Promise.all([
       this.extended.export({
-        where: { id: { in: ids } },
+        where: {
+          ...(ids && { id: { in: ids } }),
+          ...(productID && { productID }),
+        },
       }),
       this.productService.client.findMany({
         select: { id: true, name: true },
       }),
     ]);
+
     const idToName = new Map<string, string>(
       allProducts.map((product) => [product.id, product.name]),
     );
@@ -134,7 +156,7 @@ export class ProductVariantsService
       }
       return mapped;
     });
-    const data = this.excelUtilService.generateExcel({
+    return this.excelUtilService.generateExcel({
       worksheets: [
         {
           sheetName: this.excelSheets[this.productVariantEntityName],
@@ -142,18 +164,32 @@ export class ProductVariantsService
         },
       ],
     });
-    return data;
   }
 
-  async importProductVariants({ file, user }: ImportProductVariantsDto) {
+  async importProductVariants({
+    file,
+    user,
+    productID,
+  }: ImportProductVariantsDto & { productID?: string }) {
     const sheetName = this.excelSheets[this.productVariantEntityName];
     const dataCreated = await this.excelUtilService.read(file);
     const rows = dataCreated[sheetName];
-    // (Lấy danh sách productName)
+    if (productID) {
+      return this.extended.createMany({
+        data: rows.map(
+          ({ productName: _productName, attributes, ...rest }) => ({
+            ...rest,
+            productID,
+            createdBy: user.userID,
+            attributes: parseAttributes(attributes),
+          }),
+        ),
+        skipDuplicates: true,
+      });
+    }
     const productNames = [
       ...new Set(rows.map((r) => r.productName)),
     ] as string[];
-    // (Query product)
     const products = await this.productService.client.findMany({
       where: { name: { in: productNames } },
       select: { id: true, name: true },
@@ -161,31 +197,37 @@ export class ProductVariantsService
     const nameToID = new Map<string, string>(
       products.map((p) => [p.name, p.id]),
     );
-    //  (Map data + parse attributes)
-    const data = await this.extended.createMany({
+    return this.extended.createMany({
       data: rows.map(({ productName, attributes, ...rest }) => {
-        const productID = nameToID.get(productName);
-
-        if (!productID) {
+        const resolvedProductID = nameToID.get(productName);
+        if (!resolvedProductID) {
           throw new BadRequestException(
             `Product "${productName}" does not exist`,
           );
         }
         return {
           ...rest,
-          productID,
+          productID: resolvedProductID,
           createdBy: user.userID,
-          // (convert string → JSON)
           attributes: parseAttributes(attributes),
         };
       }),
       skipDuplicates: true,
     });
-    return data;
   }
 
-  async deleteProductVariant(where: Prisma.ProductVariantWhereUniqueInput) {
-    const data = await this.extended.softDelete(where);
-    return data;
+  async deleteProductVariant(
+    where: Prisma.ProductVariantWhereUniqueInput & {
+      productID?: Product['id'];
+    },
+  ) {
+    const { productID, ...uniqueWhere } = where;
+    if (productID) {
+      const variant = await this.extended.findFirst({
+        where: { id: uniqueWhere.id, productID },
+      });
+      if (!variant) throw new NotFoundException('ProductVariant not found');
+    }
+    return this.extended.softDelete(uniqueWhere);
   }
 }

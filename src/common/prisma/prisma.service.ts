@@ -4,17 +4,17 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { omit } from 'es-toolkit';
-import { StringUtilService } from '../utils/string-util/string-util.service';
+import { Category } from 'src/apps/categories/entities/category.entity';
+import { ProductCategory } from 'src/apps/product-categories/entities/product-category.entity';
+import { Product } from 'src/apps/products/entities/product.entity';
 import { RolePermission } from 'src/apps/role-permissions/entities/role-permission.entity';
+import { UserSystemRole } from 'src/apps/user-system-role/entities/user-system-role.entity';
 import { UserVendorRole } from 'src/apps/user-vendor-roles/entities/user-vendor-role.entity';
 import { Vendor } from 'src/apps/vendors/entities/vendor.entity';
 import { DateUtilService } from '../utils/date-util/date-util.service';
-import { Product } from 'src/apps/products/entities/product.entity';
-import { Category } from 'src/apps/categories/entities/category.entity';
-import { UserSystemRole } from 'src/apps/user-system-role/entities/user-system-role.entity';
-import { ProductCategory } from 'src/apps/product-categories/entities/product-category.entity';
+import { StringUtilService } from '../utils/string-util/string-util.service';
 
 @Injectable()
 // Kế thừa PrismaClient
@@ -191,21 +191,26 @@ export class PrismaService
       model: {
         // (mọi model trong Prisma đều được gắn thêm các method này)
         $allModels: {
-          async export<T>( // (tạo function export dữ liệu giống Excel / report)
+          async export<T>(
             this: T,
             args: Prisma.Args<T, 'findMany'> = {} as any,
           ) {
-            const context: any = Prisma.getExtensionContext(this); // (lấy context model -> lấy đúng model hiện tại)
-            const FIELDS_EXCLUDE = ['id']; // (loại bỏ field khi export)
-            args.select ??= Object.keys(context.fields).reduce(
+            const context: any = Prisma.getExtensionContext(this);
+            const FIELDS_EXCLUDE = ['id'];
+            const defaultSelect = Object.keys(context.fields).reduce(
               (acc, field) => ({
                 ...acc,
                 [field]: FIELDS_EXCLUDE.includes(field) ? false : true,
               }),
               {},
-            ); // (nếu user KHÔNG truyền select thì tự tạo)
-
-            const result = await context.findMany(args); // (findMany chạy thật -> gọi Prisma thật)
+            );
+            if (args.include) {
+              args.select = { ...defaultSelect, ...args.include };
+              delete args.include;
+            } else {
+              args.select = { ...defaultSelect, ...(args.select ?? {}) };
+            }
+            const result = await context.findMany(args);
             return result;
           },
           async softDelete<T>(

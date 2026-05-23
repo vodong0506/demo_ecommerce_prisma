@@ -1,26 +1,26 @@
+import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { Prisma, RoleType } from '@prisma/client';
+import { normalizeRoute } from 'src/common/utils/data-format/data-fomat.util';
+import { StringUtilService } from 'src/common/utils/string-util/string-util.service';
+import { Actions } from '../../common/guards/access-control/access-control.const';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  GetOptionsParams,
+  Options,
+} from '../../common/query/options.interface';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
 import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { ImportUsersDto, CreateUserDto } from './dto/create-user.dto';
+import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
+import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
+import { CreateUserDto, ImportUsersDto } from './dto/create-user.dto';
 import {
   ExportUsersDto,
   GetUsersPaginationDto,
   IsExistPermissionKeyDto,
 } from './dto/get-user.dto';
-import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { Actions } from '../../common/guards/access-control/access-control.const';
-import {
-  GetOptionsParams,
-  Options,
-} from '../../common/query/options.interface';
-import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
-import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
-import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
-import { StringUtilService } from 'src/common/utils/string-util/string-util.service';
-import { normalizeRoute } from 'src/common/utils/data-format/data-fomat.util';
+import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService
@@ -182,8 +182,10 @@ export class UsersService
   async isExistPermissionKey({
     userID,
     permissionKey,
+    vendorID,
   }: IsExistPermissionKeyDto) {
     if (!permissionKey) return false;
+
     const user = await this.extended.findFirst({
       where: { id: userID },
       select: {
@@ -202,7 +204,10 @@ export class UsersService
           },
         },
         userVendorRoles: {
-          where: { status: 'active' },
+          where: {
+            status: 'active',
+            ...(vendorID && { vendorID }), // ← filter đúng vendor
+          },
           select: {
             role: {
               select: {
@@ -217,16 +222,15 @@ export class UsersService
         },
       },
     });
+
     if (!user) return false;
 
-    // (có 2 loại role)
     const allRoles = [
       ...(user.userSystemRoles ?? []),
       ...(user.userVendorRoles ?? []),
     ];
-    // (Duyệt từng role)
+
     return allRoles.some((item) =>
-      // (Duyệt permission trong role)
       item.role?.rolePermissions?.some((rp) => {
         const key = rp.permission?.key;
         if (!key) return false;

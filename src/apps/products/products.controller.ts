@@ -1,33 +1,33 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
+  Controller,
   Delete,
-  UsePipes,
-  Query,
+  Get,
   Param,
-  UseInterceptors,
-  UploadedFile,
   Patch,
+  Post,
+  Query,
   Res,
+  UploadedFile,
+  UseInterceptors,
+  UsePipes,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Product } from '@prisma/client';
+import type { Response } from 'express';
+import type { UserInfo } from '../../common/decorators/user.decorator';
+import { User } from '../../common/decorators/user.decorator';
+import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
+import { ParseParamsPaginationPipe } from '../../common/pipes/parse-params-pagination.pipe';
+import type { GetOptionsParams } from '../../common/query/options.interface';
+import type { File } from '../../common/utils/excel-util/dto/excel-util.interface';
 import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
 import {
   ExportProductsDto,
   GetProductsPaginationDto,
 } from './dto/get-product.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
-import { Product } from '@prisma/client';
+import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
-import { User } from '../../common/decorators/user.decorator';
-import type { UserInfo } from '../../common/decorators/user.decorator';
-import type { Response } from 'express';
-import type { File } from '../../common/utils/excel-util/dto/excel-util.interface';
-import type { GetOptionsParams } from '../../common/query/options.interface';
-import { ParseParamsPaginationPipe } from '../../common/pipes/parse-params-pagination.pipe';
 
 @Controller('products')
 export class ProductsController {

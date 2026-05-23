@@ -1,19 +1,18 @@
 import {
-  Controller,
   Body,
+  Controller,
+  Get,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseInterceptors,
-  Get,
-  Res,
-  Param,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
 import type { Response } from 'express';
-import { UserSystemRolesService } from './user-system-roles.service';
+import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
 import { ExportUserSystemRolesDto } from './dto/get-user-system-role.dto';
+import { UserSystemRolesService } from './user-system-roles.service';
 
 @Controller('user-system-roles')
 export class UserSystemRolesController {
