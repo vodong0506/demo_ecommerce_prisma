@@ -1,19 +1,22 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
+import { UploadApiResponse } from 'cloudinary';
+import type { UserInfo } from 'src/common/decorators/user.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
 import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
+import { FileUtilService } from '../../common/utils/file-util/file-util.service';
+import { ProductVariant } from '../product-variants/entities/product-variant.entity';
+import { Product } from '../products/entities/product.entity';
 import {
   CreateProductImageDto,
   ImportProductImagesDto,
 } from './dto/create-product-images.dto';
 import { ExportProductImagesDto } from './dto/get-product-images.dto';
-import { ProductImage } from './entities/product-images.entity';
 import { UpdateProductImageDto } from './dto/update-product-images.dto';
-import { UploadProductImagesDto } from './dto/create-product-images.dto';
-import { UploadApiResponse } from 'cloudinary';
-import { FileUtilService } from '../../common/utils/file-util/file-util.service';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+import { ProductImage } from './entities/product-images.entity';
+import type { UploadProductImagePayload } from './interfaces/product-image.interface';
 
 @Injectable()
 export class ProductImagesService extends PrismaBaseService<'productImage'> {
@@ -37,6 +40,22 @@ export class ProductImagesService extends PrismaBaseService<'productImage'> {
       where: productImageWhereUniqueInput,
     });
     return data;
+  }
+
+  // (getProductImages filter theo productID/productVariantID)
+  async getProductImagesByProduct(
+    params: {
+      productID?: Product['id'];
+      productVariantID?: ProductVariant['id'];
+    } = {},
+  ) {
+    const { productID, productVariantID } = params;
+    return this.extended.findMany({
+      where: {
+        ...(productID && { productID }),
+        ...(productVariantID && { productVariantID }),
+      },
+    });
   }
 
   async getProductImages(
@@ -66,21 +85,57 @@ export class ProductImagesService extends PrismaBaseService<'productImage'> {
     return data;
   }
 
+  // (Verify image thuộc product của vendor)
+  async verifyImageOwnership({
+    imageID,
+    vendorID,
+  }: {
+    imageID: string;
+    vendorID: string;
+  }) {
+    const image = await this.extended.findFirst({
+      where: {
+        id: imageID,
+        OR: [
+          {
+            product: { vendorID }, // ← ảnh product
+          },
+          {
+            productVariant: {
+              product: { vendorID }, // ← ảnh variant
+            },
+          },
+        ],
+      },
+    });
+    if (!image) throw new NotFoundException('Image not found');
+    return image;
+  }
+
   async updateProductImage(params: {
-    where: Prisma.ProductImageWhereUniqueInput;
+    where: Prisma.ProductImageWhereUniqueInput & { vendorID?: string };
     data: UpdateProductImageDto;
   }) {
     const { where, data: dataUpdate } = params;
-    const data = await this.extended.update({
-      data: dataUpdate,
-      where,
-    });
-    return data;
+    const { vendorID, ...uniqueWhere } = where;
+    if (vendorID)
+      await this.verifyImageOwnership({
+        imageID: uniqueWhere.id as string,
+        vendorID,
+      });
+    return this.extended.update({ data: dataUpdate, where: uniqueWhere });
   }
 
-  async deleteProductImage(where: Prisma.ProductImageWhereUniqueInput) {
-    const data = await this.extended.softDelete(where);
-    return data;
+  async deleteProductImage(
+    where: Prisma.ProductImageWhereUniqueInput & { vendorID?: string },
+  ) {
+    const { vendorID, ...uniqueWhere } = where;
+    if (vendorID)
+      await this.verifyImageOwnership({
+        imageID: uniqueWhere.id as string,
+        vendorID,
+      });
+    return this.extended.softDelete(uniqueWhere);
   }
 
   async exportProductImages({ ids }: ExportProductImagesDto) {
@@ -89,7 +144,6 @@ export class ProductImagesService extends PrismaBaseService<'productImage'> {
         id: { in: ids },
       },
     });
-
     const data = this.excelUtilService.generateExcel({
       worksheets: [
         {
@@ -98,7 +152,6 @@ export class ProductImagesService extends PrismaBaseService<'productImage'> {
         },
       ],
     });
-
     return data;
   }
 
@@ -114,50 +167,52 @@ export class ProductImagesService extends PrismaBaseService<'productImage'> {
     return data;
   }
 
-  uploadProductImages({ files, user }: UploadProductImagesDto) {
-    const data: ProductImage[] = [];
+  uploadProductImages({
+    files,
+    user,
+    productID,
+    productVariantID,
+  }: {
+    files: Express.Multer.File[];
+    user: UserInfo;
+    productID?: string;
+    productVariantID?: string;
+  }) {
     for (const file of files) {
       this.eventEmitter.emit('product-images.upload', {
         file,
         user,
+        productID,
+        productVariantID,
       });
     }
-
-    return data;
+    return { message: 'Uploading images...' };
   }
 
   @OnEvent('product-images.upload')
-  async uploadProductImagesEvent(payload) {
-    const { file, user } = payload;
+  async uploadProductImagesEvent(payload: UploadProductImagePayload) {
+    const { file, user, productID, productVariantID } = payload;
     const fileName = this.fileUtilService.removeFileExtension(
-      file.originalname, // ("image1.png" → "image1")
+      file.originalname,
     );
-    const productImageExist = await this.getProductImage({
-      name: fileName, // (có ảnh nào cùng tên không)
-    });
+    const productImageExist = await this.getProductImage({ name: fileName });
     if (productImageExist) {
-      await this.fileUtilService.removeImage(file); // (Xóa file mới upload (tránh trùng))
+      await this.fileUtilService.removeImage(file);
     }
     const { url, secure_url, display_name, created_at } =
-      await this.fileUtilService.uploadImage<UploadApiResponse>(file); // (Upload lên cloud)
+      await this.fileUtilService.uploadImage<UploadApiResponse>(file);
     const dataUpsert = {
       name: display_name,
       description: display_name,
       imageUrl: secure_url ?? url,
+      ...(productID && { productID }), // ← thêm
+      ...(productVariantID && { productVariantID }), // ← thêm
       user,
     };
-    const result = await this.extended.upsert({
-      create: {
-        ...dataUpsert,
-        createdAt: created_at,
-      },
-      update: {
-        ...dataUpsert,
-      },
-      where: {
-        id: productImageExist?.id ?? '',
-      },
+    return this.extended.upsert({
+      create: { ...dataUpsert, createdAt: created_at },
+      update: { ...dataUpsert },
+      where: { id: productImageExist?.id ?? '' },
     });
-    return result;
   }
 }

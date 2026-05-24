@@ -20,6 +20,7 @@ class CreateVendorDto implements Prisma.VendorCreateInput {
   userVendorRoles?:
     | Prisma.UserVendorRoleCreateNestedManyWithoutVendorInput
     | undefined;
+  orderItems?: Prisma.OrderItemCreateNestedManyWithoutVendorInput | undefined;
 }
 
 class ImportVendorsDto extends ImportExcel {}

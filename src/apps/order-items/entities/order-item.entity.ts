@@ -4,6 +4,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 export class OrderItem implements OrderItemPrisma {
   id!: string;
   orderID!: string;
+  vendorID!: string;
   productVariantID!: string;
   quantity!: number;
   unitPrice!: Decimal;

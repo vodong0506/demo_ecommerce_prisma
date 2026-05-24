@@ -1,91 +1,83 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
+  Controller,
   Delete,
-  UsePipes,
-  Query,
+  Get,
   Param,
-  UseInterceptors,
-  UploadedFile,
   Patch,
-  Res,
+  Post,
+  Query,
+  UsePipes,
 } from '@nestjs/common';
-import { CreateCartItemDto } from './dto/create-cart-item.dto';
-import { UpdateCartItemDto } from './dto/update-cart-item.dto';
-import {
-  ExportCartItemsDto,
-  GetCartItemsPaginationDto,
-} from './dto/get-cart-item.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
 import { CartItem } from '@prisma/client';
-import { CartItemsService } from './cart-items.service';
-import { User } from '../../common/decorators/user.decorator';
-import type { UserInfo } from '../../common/decorators/user.decorator';
-import type { Response } from 'express';
-import type { File } from '../../common/utils/excel-util/dto/excel-util.interface';
-import type { GetOptionsParams } from '../../common/query/options.interface';
+import { User, type UserInfo } from 'src/common/decorators/user.decorator';
 import { ParseParamsPaginationPipe } from '../../common/pipes/parse-params-pagination.pipe';
+import type { GetOptionsParams } from '../../common/query/options.interface';
+import { SkipPermission } from '../auth/auth.decorator';
+import { CartItemsService } from './cart-items.service';
+import { AddCartItemDto } from './dto/create-cart-item.dto';
+import { GetCartItemsPaginationDto } from './dto/get-cart-item.dto';
+import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
 @Controller('cartItems')
 export class CartItemsController {
   constructor(private readonly cartItemsService: CartItemsService) {}
 
   @Post()
-  createCartItem(@Body() createDto: CreateCartItemDto, @User() user) {
-    return this.cartItemsService.createCartItem({ ...createDto, user });
+  @SkipPermission()
+  addItem(
+    @Body() dto: AddCartItemDto,
+    @User() user: UserInfo, // ← decorator extract từ JWT token
+  ) {
+    return this.cartItemsService.createCartItem({
+      userID: user.userID, //  — lấy từ token, không phải body
+      productVariantID: dto.productVariantID,
+      quantity: dto.quantity,
+    });
   }
 
   @Patch(':id')
+  @SkipPermission()
   updateCartItem(
     @Param('id') id: CartItem['id'],
     @Body() updateCartItemDto: UpdateCartItemDto,
+    @User() user: UserInfo,
   ) {
     return this.cartItemsService.updateCartItem({
       data: updateCartItemDto,
       where: { id },
+      userID: user.userID,
     });
   }
 
   @Get()
+  @SkipPermission()
   @UsePipes(ParseParamsPaginationPipe)
-  getCartItems(@Query() query: GetCartItemsPaginationDto) {
-    return this.cartItemsService.getCartItems(query);
+  getCartItems(
+    @Query() query: GetCartItemsPaginationDto,
+    @User() user: UserInfo, // ← thêm
+  ) {
+    return this.cartItemsService.getCartItems({
+      ...query,
+      userID: user.userID,
+    });
   }
 
   @Get('options')
+  @SkipPermission()
   getCartItemOptions(@Query() query: GetOptionsParams<CartItem>) {
     return this.cartItemsService.getOptions(query);
   }
 
-  @Get('export')
-  @UseInterceptors(ExcelResponseInterceptor)
-  async exportCartItems(
-    @Query() exportCartItemsDto: ExportCartItemsDto,
-    @Res() res: Response,
-  ) {
-    const workbook =
-      await this.cartItemsService.exportCartItems(exportCartItemsDto);
-    await workbook.xlsx.write(res);
-    res.end();
-    return { message: 'Export success' };
-  }
-
-  @Post('import')
-  @UseInterceptors(FileInterceptor('file'))
-  importCartItems(@UploadedFile() file: File, @User() user: UserInfo) {
-    return this.cartItemsService.importCartItems({ file, user });
-  }
-
   @Get(':id')
+  @SkipPermission()
   getCartItem(@Param('id') id: CartItem['id']) {
     return this.cartItemsService.getCartItem({ id });
   }
 
   @Delete(':id')
-  deleteCartItem(@Param('id') id: CartItem['id']) {
-    return this.cartItemsService.deleteCartItem({ id });
+  @SkipPermission()
+  deleteCartItem(@Param('id') id: CartItem['id'], @User() user: UserInfo) {
+    return this.cartItemsService.deleteCartItem({ id }, user.userID);
   }
 }

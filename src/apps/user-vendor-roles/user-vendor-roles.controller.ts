@@ -1,19 +1,18 @@
 import {
-  Controller,
   Body,
+  Controller,
+  Get,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseInterceptors,
-  Get,
-  Res,
-  Param,
 } from '@nestjs/common';
-import { UserVendorRolesService } from './user-vendor-roles.service';
-import { ExportUserVendorRolesDto } from './dto/get-user-vendor-role.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
 import type { Response } from 'express';
+import { ExcelResponseInterceptor } from '../../common/interceptors/excel-response/excel-response.interceptor';
+import { ExportUserVendorRolesDto } from './dto/get-user-vendor-role.dto';
+import { UserVendorRolesService } from './user-vendor-roles.service';
 
 @Controller('user-vendor-roles')
 export class UserVendorRolesController {

@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { User } from '@prisma/client';
 import { Request } from 'express';
-import { IS_SKIP_AUTH } from 'src/apps/auth/auth.decorator';
+import { IS_SKIP_AUTH, IS_SKIP_PERMISSION } from 'src/apps/auth/auth.decorator';
 import { UsersService } from 'src/apps/users/users.service';
 import { Vendor } from 'src/apps/vendors/entities/vendor.entity';
 import { EnvVars } from '../../envs/validate.env';
@@ -69,7 +69,6 @@ export class AccessControlGuard implements CanActivate {
     return action;
   }
 
-  // ( Hàm chính của Guard.)
   async canActivate(context: ExecutionContext) {
     // (Nếu API có decorator @SkipAuth() -> bỏ qua guard)
     const isSkipAuth = this.reflector.getAllAndOverride<boolean>(IS_SKIP_AUTH, [
@@ -79,14 +78,20 @@ export class AccessControlGuard implements CanActivate {
     if (isSkipAuth) {
       return true;
     }
-
     // (Lấy thông tin user từ request)
     const ctx = context.switchToHttp();
     const req = ctx.getRequest<Request>();
     const user = req['user'];
     if (!user) return false; // (chặn luôn nếu chưa login)
+    // (Nếu API có decorator @SkipPermission -> bỏ qua check permission)
+    const isSkipPermission = this.reflector.getAllAndOverride<boolean>(
+      IS_SKIP_PERMISSION,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isSkipPermission) {
+      return true;
+    }
     // return true;
-    // (check quyền)
     const route = this.getCurrentRoute(req);
     const action = this.getAction(req.method as unknown as RequestMethod);
     const vendor = Array.isArray(req.params['vendorId'])

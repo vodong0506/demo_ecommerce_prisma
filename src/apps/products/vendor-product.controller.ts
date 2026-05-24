@@ -96,7 +96,7 @@ export class VendorProductsController {
 
   @Get(`:id`)
   getProduct(
-    @Param('id') vendorId: Vendor['id'],
+    @Param(ProductParams.VENDOR_ID) vendorId: Vendor['id'],
     @Param('id') id: Product['id'],
   ) {
     return this.productsService.getProduct({ id, vendorID: vendorId });
@@ -104,7 +104,7 @@ export class VendorProductsController {
 
   @Patch(`:id`)
   updateProduct(
-    @Param('id') vendorId: Vendor['id'],
+    @Param(ProductParams.VENDOR_ID) vendorId: Vendor['id'],
     @Param('id') id: Product['id'],
     @Body() updateProductDto: UpdateProductDto,
   ) {
@@ -116,7 +116,7 @@ export class VendorProductsController {
 
   @Delete(`:id`)
   deleteProduct(
-    @Param('id') vendorId: Vendor['id'],
+    @Param(ProductParams.VENDOR_ID) vendorId: Vendor['id'],
     @Param('id') id: Product['id'],
   ) {
     return this.productsService.deleteProduct({ id, vendorID: vendorId });

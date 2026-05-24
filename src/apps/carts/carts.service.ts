@@ -1,30 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { CreateCartDto, ImportCartsDto } from './dto/create-cart.dto';
-import { UpdateCartDto } from './dto/update-cart.dto';
-import { ExportCartsDto, GetCartsPaginationDto } from './dto/get-cart.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { Cart } from './entities/cart.entity';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   GetOptionsParams,
   Options,
 } from '../../common/query/options.interface';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
 import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
 import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
+import { CreateCartDto } from './dto/create-cart.dto';
+import { GetCartsPaginationDto } from './dto/get-cart.dto';
+import { UpdateCartDto } from './dto/update-cart.dto';
+import { Cart } from './entities/cart.entity';
 
 @Injectable()
 export class CartsService
   extends PrismaBaseService<'cart'>
   implements Options<Cart>
 {
-  private cartEntityName = Cart.name;
-  private excelSheets = {
-    [this.cartEntityName]: this.cartEntityName,
-  };
   constructor(
-    private excelUtilService: ExcelUtilService,
     public prismaService: PrismaService,
     private paginationUtilService: PaginationUtilService,
     private queryUtil: QueryUtilService,
@@ -40,11 +34,11 @@ export class CartsService
     return super.extended;
   }
 
-  async getCart(where: Prisma.CartWhereUniqueInput) {
-    const data = await this.extended.findUnique({
-      where,
+  async getCart(userID: string) {
+    return this.extended.findUnique({
+      where: { userID },
+      include: { cartItems: true }, // ← trả về luôn items
     });
-    return data;
   }
 
   async getCarts({ page, itemPerPage }: GetCartsPaginationDto) {
@@ -95,39 +89,8 @@ export class CartsService
     return data;
   }
 
-  async exportCarts({ ids }: ExportCartsDto) {
-    const carts = await this.extended.export({
-      where: {
-        id: { in: ids },
-      },
-    });
-
-    const data = this.excelUtilService.generateExcel({
-      worksheets: [
-        {
-          sheetName: this.excelSheets[this.cartEntityName],
-          data: carts,
-        },
-      ],
-    });
-
-    return data;
-  }
-
-  async importCarts({ file, user }: ImportCartsDto) {
-    const cartSheetName = this.excelSheets[this.cartEntityName];
-    const dataCreated = await this.excelUtilService.read(file);
-    const data = await this.extended.createMany({
-      data: dataCreated[cartSheetName].map((item) => ({
-        ...item,
-        user,
-      })),
-    });
-    return data;
-  }
-
   async deleteCart(where: Prisma.CartWhereUniqueInput) {
-    const data = await this.extended.softDelete(where);
+    const data = await this.client.delete({ where });
     return data;
   }
 }

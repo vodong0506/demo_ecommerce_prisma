@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
@@ -47,6 +47,21 @@ export class OrdersService
     return data;
   }
 
+  // (Lấy 1 order của vendor)
+  async getVendorOrder({ id, vendorID }: { id: string; vendorID: string }) {
+    return this.extended.findFirst({
+      where: {
+        id,
+        orderItems: { some: { vendorID } },
+      },
+      include: {
+        orderItems: {
+          where: { vendorID }, // (chỉ lấy items của vendor)
+        },
+      },
+    });
+  }
+
   async getOrders({ page, itemPerPage }: GetOrdersPaginationDto) {
     const totalItems = await this.extended.count();
     const paging = this.paginationUtilService.paging({
@@ -58,9 +73,36 @@ export class OrdersService
       skip: paging.skip,
       take: itemPerPage,
     });
-
     const data = paging.format(list);
     return data;
+  }
+
+  // (Lấy orders của vendor có phân trang)
+  async getVendorOrders({
+    vendorID,
+    page,
+    itemPerPage,
+  }: GetOrdersPaginationDto & { vendorID: string }) {
+    const where: Prisma.OrderWhereInput = {
+      orderItems: { some: { vendorID } }, // (filter order có item của vendor)
+    };
+    const totalItems = await this.extended.count({ where });
+    const paging = this.paginationUtilService.paging({
+      page,
+      itemPerPage,
+      totalItems,
+    });
+    const list = await this.extended.findMany({
+      where,
+      skip: paging.skip,
+      take: itemPerPage,
+      include: {
+        orderItems: {
+          where: { vendorID }, // (chỉ lấy items của vendor đó)
+        },
+      },
+    });
+    return paging.format(list);
   }
 
   async createOrder(createOrderDto: CreateOrderDto) {
@@ -80,6 +122,30 @@ export class OrdersService
       where,
     });
     return data;
+  }
+
+  // (Vendor update status order)
+  async updateVendorOrder({
+    id,
+    vendorID,
+    data,
+  }: {
+    id: string;
+    vendorID: string;
+    data: UpdateOrderDto;
+  }) {
+    // (Verify order có chứa item của vendor không)
+    const order = await this.extended.findFirst({
+      where: {
+        id,
+        orderItems: { some: { vendorID } },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.extended.update({
+      where: { id },
+      data,
+    });
   }
 
   async getOptions(params: GetOptionsParams<Order>) {

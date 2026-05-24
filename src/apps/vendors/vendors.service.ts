@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
@@ -33,6 +34,7 @@ export class VendorsService
     private paginationUtilService: PaginationUtilService,
     private userService: UsersService,
     private queryUtil: QueryUtilService,
+    private eventEmitter: EventEmitter2,
   ) {
     super(prismaService, 'vendor');
   }
@@ -68,6 +70,13 @@ export class VendorsService
     return data;
   }
 
+  async getVendorProfile(vendorID: Vendor['id']) {
+    const data = await this.extended.findUnique({
+      where: { id: vendorID },
+    });
+    return data;
+  }
+
   async createVendor(createVendorDto: CreateVendorDto) {
     const data = await this.extended.create({
       data: createVendorDto,
@@ -83,6 +92,18 @@ export class VendorsService
     const data = await this.extended.update({
       data: dataUpdate,
       where,
+    });
+    return data;
+  }
+
+  async updateVendorProfile(params: {
+    vendorID: Vendor['id'];
+    data: UpdateVendorDto;
+  }) {
+    const { vendorID, data: dataUpdate } = params;
+    const data = await this.extended.update({
+      where: { id: vendorID },
+      data: dataUpdate,
     });
     return data;
   }
@@ -152,5 +173,21 @@ export class VendorsService
   async deleteVendor(where: Prisma.VendorWhereUniqueInput) {
     const data = await this.extended.softDelete(where);
     return data;
+  }
+
+  @OnEvent('product.created')
+  async onProductCreated({ vendorID }: { vendorID: Vendor['id'] }) {
+    await this.extended.update({
+      where: { id: vendorID },
+      data: { totalProducts: { increment: 1 } },
+    });
+  }
+
+  @OnEvent('product.deleted')
+  async onProductDeleted({ vendorID }: { vendorID: Vendor['id'] }) {
+    await this.extended.update({
+      where: { id: vendorID },
+      data: { totalProducts: { decrement: 1 } },
+    });
   }
 }

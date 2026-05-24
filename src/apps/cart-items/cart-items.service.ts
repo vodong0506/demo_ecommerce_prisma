@@ -1,36 +1,24 @@
-import { Injectable } from '@nestjs/common';
-import {
-  CreateCartItemDto,
-  ImportCartItemsDto,
-} from './dto/create-cart-item.dto';
-import { UpdateCartItemDto } from './dto/update-cart-item.dto';
-import {
-  ExportCartItemsDto,
-  GetCartItemsPaginationDto,
-} from './dto/get-cart-item.dto';
-import { PrismaBaseService } from '../../common/services/prisma-base.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { CartItem } from './entities/cart-item.entity';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   GetOptionsParams,
   Options,
 } from '../../common/query/options.interface';
+import { PrismaBaseService } from '../../common/services/prisma-base.service';
 import { PaginationUtilService } from '../../common/utils/pagination-util/pagination-util.service';
 import { QueryUtilService } from '../../common/utils/query-util/query-util.service';
+import { User } from '../users/entities/user.entity';
+import { GetCartItemsPaginationDto } from './dto/get-cart-item.dto';
+import { UpdateCartItemDto } from './dto/update-cart-item.dto';
+import { CartItem } from './entities/cart-item.entity';
 
 @Injectable()
 export class CartItemsService
   extends PrismaBaseService<'cartItem'>
   implements Options<CartItem>
 {
-  private cartItemEntityName = CartItem.name;
-  private excelSheets = {
-    [this.cartItemEntityName]: this.cartItemEntityName,
-  };
   constructor(
-    private excelUtilService: ExcelUtilService,
     public prismaService: PrismaService,
     private paginationUtilService: PaginationUtilService,
     private queryUtil: QueryUtilService,
@@ -53,39 +41,63 @@ export class CartItemsService
     return data;
   }
 
-  async getCartItems({ page, itemPerPage }: GetCartItemsPaginationDto) {
-    const totalItems = await this.extended.count();
+  async getCartItems({
+    page,
+    itemPerPage,
+    userID,
+  }: GetCartItemsPaginationDto & { userID: User['id'] }) {
+    const where = { cart: { userID } };
+    const totalItems = await this.extended.count({ where });
     const paging = this.paginationUtilService.paging({
       page,
       itemPerPage,
       totalItems,
     });
     const list = await this.extended.findMany({
+      where,
       skip: paging.skip,
       take: itemPerPage,
     });
-
-    const data = paging.format(list);
-    return data;
+    return paging.format(list);
   }
 
-  async createCartItem(createCartItemDto: CreateCartItemDto) {
-    const data = await this.extended.create({
-      data: createCartItemDto,
+  async createCartItem({
+    userID,
+    productVariantID,
+    quantity,
+  }: {
+    userID: string;
+    productVariantID: string;
+    quantity: number;
+  }) {
+    const cart = await this.prismaService.cart.upsert({
+      where: { userID },
+      create: { userID },
+      update: {},
     });
-    return data;
+    return this.client.upsert({
+      where: {
+        cartID_productVariantID: { cartID: cart.id, productVariantID },
+      },
+      create: { cartID: cart.id, productVariantID, quantity },
+      update: { quantity },
+    });
   }
 
   async updateCartItem(params: {
     where: Prisma.CartItemWhereUniqueInput;
     data: UpdateCartItemDto;
+    userID: User['id'];
   }) {
-    const { where, data: dataUpdate } = params;
-    const data = await this.extended.update({
-      data: dataUpdate,
+    const { where, data: dataUpdate, userID } = params;
+    const item = await this.client.findUnique({
       where,
+      include: { cart: true },
     });
-    return data;
+    if (!item || item.cart.userID !== userID) {
+      throw new NotFoundException('CartItem not found');
+    }
+    return this.extended.update({ data: dataUpdate, where });
   }
 
   async getOptions(params: GetOptionsParams<CartItem>) {
@@ -101,39 +113,18 @@ export class CartItemsService
     return data;
   }
 
-  async exportCartItems({ ids }: ExportCartItemsDto) {
-    const cartItems = await this.extended.export({
-      where: {
-        id: { in: ids },
-      },
+  async deleteCartItem(
+    where: Prisma.CartItemWhereUniqueInput,
+    userID: User['id'],
+  ) {
+    // Verify item thuộc cart của user
+    const item = await this.client.findUnique({
+      where,
+      include: { cart: true },
     });
-
-    const data = this.excelUtilService.generateExcel({
-      worksheets: [
-        {
-          sheetName: this.excelSheets[this.cartItemEntityName],
-          data: cartItems,
-        },
-      ],
-    });
-
-    return data;
-  }
-
-  async importCartItems({ file, user }: ImportCartItemsDto) {
-    const cartItemSheetName = this.excelSheets[this.cartItemEntityName];
-    const dataCreated = await this.excelUtilService.read(file);
-    const data = await this.extended.createMany({
-      data: dataCreated[cartItemSheetName].map((item) => ({
-        ...item,
-        user,
-      })),
-    });
-    return data;
-  }
-
-  async deleteCartItem(where: Prisma.CartItemWhereUniqueInput) {
-    const data = await this.extended.softDelete(where);
-    return data;
+    if (!item || item.cart.userID !== userID) {
+      throw new NotFoundException('CartItem not found');
+    }
+    return this.client.delete({ where });
   }
 }

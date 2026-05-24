@@ -126,16 +126,17 @@ model Vendor {
   user            User             @relation(fields: [userID], references: [id])
   products        Product[]
   userVendorRoles UserVendorRole[] // (danh sách thành viên trong vendor)
+  orderItems      OrderItem[]
 }
 
 model Role {
-  id          String   @id @default(uuid())
-  name        String   
+  id          String    @id @default(uuid())
+  name        String
   description String?
-  roleType    RoleType @default(VENDOR)
-  createdAt   DateTime @default(now())
+  roleType    RoleType  @default(VENDOR)
+  createdAt   DateTime  @default(now())
   createdBy   String?
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
   userSystemRoles UserSystemRole[]
@@ -319,12 +320,14 @@ model Order {
 model OrderItem {
   id                     String  @id @default(uuid())
   orderID                String
+  vendorID               String
   productVariantID       String
   quantity               Int
   unitPrice              Decimal
   totalPrice             Decimal
   productVariantSnapshot Json?
 
+  vendor         Vendor         @relation(fields: [vendorID], references: [id])
   productVariant ProductVariant @relation(fields: [productVariantID], references: [id])
   order          Order          @relation(fields: [orderID], references: [id])
 }
@@ -360,7 +363,7 @@ model Promotion {
   createdBy   String?
   updatedAt   DateTime        @updatedAt
   deletedAt   DateTime?
-  
+
   orderPromotions OrderPromotion[]
 }
 

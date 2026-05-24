@@ -43,14 +43,13 @@ export class UsersService
   }
 
   get client() {
-    return super.client; // (Prisma gốc (CRUD thường))
+    return super.client;
   }
 
   get extended() {
-    return super.extended; // (Prisma đã $extends)
+    return super.extended;
   }
 
-  // (Prisma.UserWhereUniqueInput -> chỉ được truyền field UNIQUE)
   async getUser(where: Prisma.UserWhereUniqueInput) {
     const data = await this.extended.findUnique({
       where,
@@ -58,9 +57,15 @@ export class UsersService
     return data;
   }
 
+  async getUserProfile(userID: User['id']) {
+    return this.extended.findUnique({
+      where: { id: userID },
+    });
+  }
+
   async getUsers({ page, itemPerPage }: GetUsersPaginationDto) {
     const usersCacheKey = this.getUsers.name;
-    const usersCached = await this.cacheManager.get(usersCacheKey); // (Lấy cache)
+    const usersCached = await this.cacheManager.get(usersCacheKey);
     if (usersCached) return usersCached;
 
     const totalItems = await this.extended.count();
@@ -96,6 +101,14 @@ export class UsersService
       where,
     });
     return data;
+  }
+
+  async updateUserProfile(params: { userID: User['id']; data: UpdateUserDto }) {
+    const { userID, data: dataUpdate } = params;
+    return this.extended.update({
+      where: { id: userID },
+      data: dataUpdate,
+    });
   }
 
   async deleteUser(where: Prisma.UserWhereUniqueInput) {

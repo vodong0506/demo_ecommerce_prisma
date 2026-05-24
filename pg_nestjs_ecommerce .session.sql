@@ -1,1 +1,1 @@
-SELECT * FROM "Category"
+DELETE FROM "Role"

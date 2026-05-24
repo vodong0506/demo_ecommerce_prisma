@@ -7,6 +7,7 @@ import {
 import { Prisma, PrismaClient } from '@prisma/client';
 import { omit } from 'es-toolkit';
 import { Category } from 'src/apps/categories/entities/category.entity';
+import { OrderPromotion } from 'src/apps/order-promotions/entities/order-promotion.entity';
 import { ProductCategory } from 'src/apps/product-categories/entities/product-category.entity';
 import { Product } from 'src/apps/products/entities/product.entity';
 import { RolePermission } from 'src/apps/role-permissions/entities/role-permission.entity';
@@ -110,6 +111,7 @@ export class PrismaService
     UserVendorRole.name,
     UserSystemRole.name,
     ProductCategory.name,
+    OrderPromotion.name,
   ];
 
   initExtended() {

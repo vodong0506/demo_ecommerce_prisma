@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
@@ -38,6 +39,7 @@ export class ProductsService
     private paginationUtilService: PaginationUtilService,
     private queryUtil: QueryUtilService,
     private vendorService: VendorsService,
+    private eventEmitter: EventEmitter2,
   ) {
     super(prismaService, 'product');
   }
@@ -50,8 +52,6 @@ export class ProductsService
     return super.extended;
   }
 
-  // (Admin gọi /products/:id → vendorID = undefined → lấy bất kỳ product nào)
-  // (Vendor gọi /vendors/:vendorId/products/:id → vendorID = "abc" → chỉ lấy product thuộc vendor đó)
   async getProduct(
     where: Prisma.ProductWhereUniqueInput & { vendorID?: Vendor['id'] },
   ) {
@@ -65,8 +65,6 @@ export class ProductsService
     return data;
   }
 
-  // (Admin → vendorID = undefined → lấy tất cả products)
-  //( Vendor → vendorID = "abc" → chỉ lấy products của vendor đó)
   async getProducts({
     page,
     itemPerPage,
@@ -88,16 +86,14 @@ export class ProductsService
     return paging.format(list);
   }
 
-  // (Chỉ dùng bởi VendorProductsController)
   async createProduct(createProductDto: CreateProductDto) {
     const data = await this.extended.create({
       data: createProductDto,
     });
+    this.eventEmitter.emit('product.created', { vendorID: data.vendorID });
     return data;
   }
 
-  // (Admin → vendorID = undefined → update thẳng)
-  // (Vendor → vendorID = "abc" → verify product thuộc vendor trước rồi mới update)
   async updateProduct(params: {
     where: Prisma.ProductWhereUniqueInput & { vendorID?: Vendor['id'] };
     data: UpdateProductDto;
@@ -210,8 +206,6 @@ export class ProductsService
     });
   }
 
-  // (Admin → vendorID = undefined → xóa thẳng)
-  // (Vendor → vendorID = "abc" → verify product thuộc vendor trước rồi mới xóa)
   async deleteProduct(
     where: Prisma.ProductWhereUniqueInput & { vendorID?: Vendor['id'] },
   ) {
@@ -222,6 +216,8 @@ export class ProductsService
       });
       if (!product) throw new NotFoundException('Product not found');
     }
-    return this.extended.softDelete(uniqueWhere);
+    const data = await this.extended.softDelete(uniqueWhere);
+    this.eventEmitter.emit('product.deleted', { vendorID: data.vendorID });
+    return data;
   }
 }

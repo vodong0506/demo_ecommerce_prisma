@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
-import { ProductImagesService } from './product-images.service';
-import { ProductImagesController } from './product-images.controller';
 import { ExcelUtilService } from '../../common/utils/excel-util/excel-util.service';
-import { FileUtilService } from '../../common/utils/file-util/file-util.service';
 import { FileUtilModule } from '../../common/utils/file-util/file-util.module';
+import { FileUtilService } from '../../common/utils/file-util/file-util.service';
+import { ProductImagesController } from './product-images.controller';
+import { ProductImagesService } from './product-images.service';
+import { VendorProductImageController } from './vendor-product-images.controller';
+import { VendorProductVariantImagesController } from './vendor-productvatiant-images.controller';
 
 @Module({
   imports: [FileUtilModule],
-  controllers: [ProductImagesController],
+  controllers: [
+    ProductImagesController,
+    VendorProductImageController,
+    VendorProductVariantImagesController,
+  ],
   providers: [ProductImagesService, ExcelUtilService, FileUtilService],
   exports: [ProductImagesService],
 })
